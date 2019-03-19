@@ -1,20 +1,14 @@
 package ru.batuevdm.theelectronix;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.support.design.widget.Snackbar;
-import android.support.v4.app.Fragment;
 import android.view.View;
 import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-import java.util.ArrayList;
-
-import static android.content.Context.MODE_PRIVATE;
 
 class Shop {
     private Context context;
@@ -62,6 +56,7 @@ class Shop {
                     } else {
                         // Product col < Cart product col
                         Toast.makeText(context, "Количество товаров больше, чем есть в наличии", Toast.LENGTH_LONG).show();
+                        return;
                     }
                 }
                 JSONObject newProduct = new JSONObject();
@@ -91,6 +86,75 @@ class Shop {
         }
     }
 
+    boolean deleteFromCart(int productID) {
+        String oldProducts = getSettings("cart");
+        if (oldProducts.trim().isEmpty()) {
+            oldProducts = "{\"cart\": []}";
+        }
+        try {
+            JSONObject oldCartObject = new JSONObject(oldProducts);
+            JSONArray oldCart = oldCartObject.getJSONArray("cart");
+            JSONObject newCartObject = new JSONObject();
+            JSONArray newCart = new JSONArray();
+
+            for (int i = 0; i < oldCart.length(); i++) {
+                JSONObject oldProduct = oldCart.getJSONObject(i);
+                int _productID = oldProduct.getInt("id");
+                int _col = oldProduct.getInt("col");
+                if (_productID != productID) {
+                    JSONObject newProduct = new JSONObject();
+                    newProduct.put("id", _productID);
+                    newProduct.put("col", _col);
+                    newCart.put(newProduct);
+                }
+
+            }
+
+            newCartObject.put("cart", newCart);
+
+            String newProducts = newCartObject.toString();
+            return saveSettings("cart", newProducts);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    boolean changeCol(int productID, int newCol) {
+        String oldProducts = getSettings("cart");
+        if (oldProducts.trim().isEmpty()) {
+            oldProducts = "{\"cart\": []}";
+        }
+        try {
+            JSONObject oldCartObject = new JSONObject(oldProducts);
+            JSONArray oldCart = oldCartObject.getJSONArray("cart");
+            JSONObject newCartObject = new JSONObject();
+            JSONArray newCart = new JSONArray();
+
+            for (int i = 0; i < oldCart.length(); i++) {
+                JSONObject oldProduct = oldCart.getJSONObject(i);
+                int _productID = oldProduct.getInt("id");
+                int _col = oldProduct.getInt("col");
+                if (_productID == productID) {
+                    _col = newCol;
+                }
+                JSONObject newProduct = new JSONObject();
+                newProduct.put("id", _productID);
+                newProduct.put("col", _col);
+
+                newCart.put(newProduct);
+            }
+
+            newCartObject.put("cart", newCart);
+
+            String newProducts = newCartObject.toString();
+            return saveSettings("cart", newProducts);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
     JSONArray getCart() {
         try {
             String cartString = getSettings("cart");
@@ -105,5 +169,9 @@ class Shop {
             e.printStackTrace();
         }
         return new JSONArray();
+    }
+
+    void clearCart() {
+        saveSettings("cart", "");
     }
 }

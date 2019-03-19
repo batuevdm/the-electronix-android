@@ -4,14 +4,18 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Paint;
+import android.inputmethodservice.Keyboard;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputFilter;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
+import android.text.TextWatcher;
 import android.util.TypedValue;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -30,8 +34,10 @@ import com.squareup.picasso.Picasso;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.w3c.dom.Text;
 
 import java.io.IOException;
+import java.security.Key;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -40,6 +46,8 @@ import okhttp3.Response;
 public class CartActivity extends AppCompatActivity {
 
     Api api;
+    Shop shop;
+    int allPrice = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,25 +78,39 @@ public class CartActivity extends AppCompatActivity {
     }
 
     public void loadCart() throws JSONException {
-        Shop shop = new Shop(getApplicationContext());
+        allPrice = 0;
+        shop = new Shop(getApplicationContext());
         JSONArray cart = shop.getCart();
         ProgressBar progressBar = findViewById(R.id.cartProgressBar);
+        Button cartButton = findViewById(R.id.cartOrderButton);
+        LinearLayout scroll = findViewById(R.id.cartScrollLayout);
 
         api.loading(true, progressBar);
+        scroll.removeAllViewsInLayout();
         if (cart.length() > 0) {
             for (int i = 0; i < cart.length(); i++) {
                 JSONObject product = cart.getJSONObject(i);
-                addProduct(product, findViewById(R.id.cartScrollLayout));
+                if ((cart.length() - 1) == i)
+                    addProduct(product, scroll, true);
+                else
+                    addProduct(product, scroll);
+                cartButton.setVisibility(Button.VISIBLE);
+                cartButton.setOnClickListener(v -> {
+                    Intent intent = new Intent(this, OrderActivity.class);
+                    startActivity(intent);
+                });
             }
         } else {
             Toast.makeText(getApplicationContext(), "Пусто", Toast.LENGTH_LONG).show();
         }
         api.loading(false, progressBar);
-        Button cartButton = findViewById(R.id.cartOrderButton);
-        cartButton.setVisibility(Button.VISIBLE);
+        View currentFocus = getCurrentFocus();
+        if (currentFocus != null) {
+            currentFocus.clearFocus();
+        }
     }
 
-    public void addProduct(JSONObject JSONproduct, LinearLayout layout) throws JSONException {
+    public void addProduct(JSONObject JSONproduct, LinearLayout layout, boolean last) throws JSONException {
         int productID = JSONproduct.getInt("id");
         LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         View rowView = inflater.inflate(R.layout.cart_item, null);
@@ -126,11 +148,12 @@ public class CartActivity extends AppCompatActivity {
 
                             JSONObject product = result.getJSONObject("product");
 
-                            TextView productName =                  rowView.findViewById(R.id.cartProductName);
-                            ImageView productImage =                rowView.findViewById(R.id.cartProductImage);
-                            TextView productPrice =                 rowView.findViewById(R.id.cartPrice);
-                            EditText productCol =                   rowView.findViewById(R.id.cartCol);
-                            TextView maxProductCol =                rowView.findViewById(R.id.cartColMax);
+                            TextView productName = rowView.findViewById(R.id.cartProductName);
+                            ImageView productImage = rowView.findViewById(R.id.cartProductImage);
+                            TextView productPrice = rowView.findViewById(R.id.cartPrice);
+                            EditText productCol = rowView.findViewById(R.id.cartCol);
+                            TextView maxProductCol = rowView.findViewById(R.id.cartColMax);
+                            ImageView deleteProduct = rowView.findViewById(R.id.cartDelete);
 
                             int col = Integer.parseInt(product.getString("col"));
                             int cartCol = JSONproduct.getInt("col");
@@ -138,7 +161,7 @@ public class CartActivity extends AppCompatActivity {
                                 cartCol = col;
                             }
                             productCol.setText(String.format("%s", cartCol));
-                            productCol.setFilters(new InputFilter[]{ new InputFilterMinMax(1, col)});
+                            productCol.setFilters(new InputFilter[]{new InputFilterMinMax(1, col)});
                             maxProductCol.setText("Максимальное количество: " + col);
 
                             productName.setText(product.getString("name"));
@@ -146,8 +169,15 @@ public class CartActivity extends AppCompatActivity {
 
                             if (product.getString("new_price").equals("null")) {
                                 productPrice.setText(product.getString("price") + " \u20BD");
+                                allPrice += Integer.parseInt(product.getString("price")) * cartCol;
                             } else {
                                 productPrice.setText(product.getString("new_price") + " \u20BD");
+                                allPrice += Integer.parseInt(product.getString("new_price")) * cartCol;
+                            }
+
+                            if (last) {
+                                TextView allPriceText = findViewById(R.id.cartAllPRice);
+                                allPriceText.setText("Итого: " + allPrice + " \u20BD");
                             }
 
                             String photo = product.getString("main_photo").equals("null") ? "default.png" : product.getString("main_photo");
@@ -156,6 +186,54 @@ public class CartActivity extends AppCompatActivity {
                                     .placeholder(R.drawable.ic_menu_gallery)
                                     .error(R.drawable.ic_menu_camera)
                                     .into(productImage);
+
+                            deleteProduct.setOnClickListener(v -> {
+                                shop.deleteFromCart(productID);
+                                try {
+                                    loadCart();
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
+                            });
+
+                            productCol.addTextChangedListener(new TextWatcher() {
+                                @Override
+                                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                                }
+
+                                @Override
+                                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                                }
+
+                                @Override
+                                public void afterTextChanged(Editable s) {
+                                    if (!s.toString().isEmpty())
+                                        shop.changeCol(productID, Integer.parseInt(s.toString()));
+                                }
+                            });
+
+                            productCol.setOnFocusChangeListener((v, hasFocus) -> {
+                                if (!hasFocus) {
+                                    try {
+                                        loadCart();
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                            });
+
+                            productCol.setOnKeyListener((v, keyCode, event) -> {
+                                if ((event.getAction() == KeyEvent.ACTION_DOWN) &&
+                                        (keyCode == KeyEvent.KEYCODE_ENTER)) {
+                                    try {
+                                        if (v.hasFocus())
+                                            v.clearFocus();
+                                        loadCart();
+                                    } catch (Exception e) {
+                                    }
+                                }
+                                return false;
+                            });
 
                         } catch (JSONException e) {
                             api.loadError(findViewById(android.R.id.content), v -> {
@@ -181,5 +259,9 @@ public class CartActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    public void addProduct(JSONObject JSONproduct, LinearLayout layout) throws JSONException {
+        addProduct(JSONproduct, layout, false);
     }
 }
